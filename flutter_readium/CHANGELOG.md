@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 
+### Fixed
+
+- **SPM pinned `swift-toolkit` to 3.9.x while the podspec required `~> 3.11.0`.**
+  `Package.swift` used `.upToNextMinor(from: "3.9.0")`, so SPM consumers were
+  capped below 3.10 and got a different navigator than CocoaPods consumers of
+  the same release. One visible consequence: custom `selectionActions` were
+  appended after the system items on iOS, because inserting them at the start
+  of the edit menu landed in swift-toolkit 3.11.0.
+
 ## [0.4.2] - 2026-08-28
 
 ### Fixed
