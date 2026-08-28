@@ -99,3 +99,22 @@ tmp
 # bin/build_test_fixtures (run via bin/install locally, or the
 # fetch-test-resources CI action). Not committed; see bin/fetch_test_resources.
 flutter_readium/example/web/test-fixtures/
+
+# El puente JS compilado SÍ se versiona, y no es un descuido.
+#
+# El nativo lo inyecta en la WebView por ruta fija —ReadiumExtensions.kt y
+# EPUBReaderView+JSBridge.swift piden assets/helpers/flutterReadiumTools.js— y
+# quien consume este paquete como dependencia de git NO ejecuta `npm run build`:
+# pub solo clona. Sin el bundle dentro del repositorio, `window.flutterReadium`
+# nunca llega a la WebView.
+#
+# Y falla en silencio: declarar `assets/helpers/` como carpeta en el pubspec no
+# da error aunque solo tenga un `.keep`. La app compila, arranca y lee, con
+# medio puente JS ausente.
+#
+# Se reabre la carpeta, se vuelve a cerrar entera, y se dejan pasar solo los dos
+# ficheros que se envían. Las estadísticas del rollup siguen fuera.
+!flutter_readium/assets/helpers/
+flutter_readium/assets/helpers/*
+!flutter_readium/assets/helpers/flutterReadiumTools.js
+!flutter_readium/assets/helpers/flutterReadiumTools.css
