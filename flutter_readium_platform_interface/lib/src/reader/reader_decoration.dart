@@ -11,7 +11,17 @@ enum DecorationStyle {
   underline,
 
   /// Tinted box behind text **and** all surrounding body text is dimmed, drawing the eye to the active range. |
-  spotlight;
+  spotlight,
+
+  /// A small glyph pinned to the **first character** of the range, drawn beside
+  /// the text rather than over it. Unlike the other three styles this one paints
+  /// no box: it marks that the range carries something (a written note, say)
+  /// without changing how the range itself looks, so it is meant to be applied
+  /// **in addition to** a `highlight` or `underline` on the same range.
+  ///
+  /// The glyph and its colour come from [ReaderDecorationStyle.mark] and
+  /// [ReaderDecorationStyle.tint].
+  noteMark;
 
   static DecorationStyle fromString(String? styleStr) {
     switch (styleStr) {
@@ -19,6 +29,8 @@ enum DecorationStyle {
         return DecorationStyle.underline;
       case 'spotlight':
         return DecorationStyle.spotlight;
+      case 'noteMark':
+        return DecorationStyle.noteMark;
       case 'highlight':
       default:
         return DecorationStyle.highlight;
@@ -58,7 +70,7 @@ class ReaderDecoration implements JSONable {
 }
 
 class ReaderDecorationStyle implements JSONable {
-  const ReaderDecorationStyle({required this.style, this.tint, this.isActive = false});
+  const ReaderDecorationStyle({required this.style, this.tint, this.isActive = false, this.mark});
 
   final DecorationStyle style;
 
@@ -76,23 +88,38 @@ class ReaderDecorationStyle implements JSONable {
   /// implemented there.
   final bool isActive;
 
+  /// The glyph drawn by [DecorationStyle.noteMark] — any short string, so an
+  /// emoji, a dingbat or a single letter all work.
+  ///
+  /// Ignored by every other style. `null` falls back to a bullet on the native
+  /// side, so a `noteMark` decoration always draws something rather than
+  /// silently painting nothing.
+  final String? mark;
+
   @override
   Map<String, dynamic> toJson() => {
     'style': style.name,
     if (tint != null) 'tint': tint!.toCSS(),
     'isActive': isActive,
+    if (mark != null) 'mark': mark,
   };
 
   factory ReaderDecorationStyle.fromJson(final Map<String, dynamic> map) => ReaderDecorationStyle(
     style: DecorationStyle.fromString(map['style']),
     tint: map['tint'] != null ? Color(map['tint'] as int) : null,
     isActive: map['isActive'] as bool? ?? false,
+    mark: map['mark'] as String?,
   );
 
-  ReaderDecorationStyle copyWith({Object style = unset, Object? tint = unset, Object isActive = unset}) =>
-      ReaderDecorationStyle(
-        style: identical(style, unset) ? this.style : (style as DecorationStyle),
-        tint: identical(tint, unset) ? this.tint : tint as Color?,
-        isActive: identical(isActive, unset) ? this.isActive : (isActive as bool),
-      );
+  ReaderDecorationStyle copyWith({
+    Object style = unset,
+    Object? tint = unset,
+    Object isActive = unset,
+    Object? mark = unset,
+  }) => ReaderDecorationStyle(
+    style: identical(style, unset) ? this.style : (style as DecorationStyle),
+    tint: identical(tint, unset) ? this.tint : tint as Color?,
+    isActive: identical(isActive, unset) ? this.isActive : (isActive as bool),
+    mark: identical(mark, unset) ? this.mark : mark as String?,
+  );
 }

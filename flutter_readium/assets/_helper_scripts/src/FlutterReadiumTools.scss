@@ -192,3 +192,56 @@ body.flutter-readium-spotlight-active .flutter-readium-spotlit-text,
 body.flutter-readium-spotlight-active .flutter-readium-spotlit-text *:not(a) {
   color: initial !important;
 }
+
+// Note mark — one glyph per annotation, not one per line.
+//
+// The `noteMark` decoration template (EPUBReaderView+Decorations.swift and
+// EpubReaderFragment.kt) uses the `boxes` layout, so Readium clones its element
+// once per line box of the range. The glyph marks where the annotation *starts*,
+// so only the first box should carry it; without this rule a long annotation
+// grows a column of duplicate glyphs down the paragraph.
+//
+// The sibling combinator is safe here: Readium's decorator wraps the boxes of a
+// single decoration inside that decoration's own container `<div>`, so a mark
+// belonging to a different annotation is never a sibling of this one.
+.flutter-readium-note-mark ~ .flutter-readium-note-mark {
+  display: none;
+}
+
+// El distintivo: un círculo semitransparente con el símbolo dentro, montado
+// sobre la **esquina superior izquierda de la primera letra** del rango.
+//
+// Vive aquí y no en las plantillas nativas por dos razones. Una, que si no, el
+// mismo CSS se escribe dos veces —en Swift y en Kotlin— y se separan solas. Y
+// dos, que ir por encima de la letra es lo que hace que el símbolo **se pueda
+// tocar**: el decorador de Readium resuelve el toque comparando el punto con el
+// rectángulo del elemento, así que un símbolo pintado fuera de la caja de la
+// decoración no lo alcanza ningún dedo.
+//
+// El `background-color` lo pone la plantilla nativa, porque el color lo elige la
+// app. Y **va con `!important` desde allí**: ReadiumCSS fuerza a transparente el
+// fondo de todo elemento cuando hay un tema activo, así que sin eso el círculo
+// no se ve — el mismo tropiezo que ya está documentado en el spotlight.
+.flutter-readium-note-mark__badge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  // Porcentajes del propio círculo: lo sube y lo desplaza hasta montarse sobre
+  // la esquina de la primera letra. Encima, no al lado.
+  transform: translate(-42%, -58%);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // `em` a propósito, y sobre el cuerpo de letra del texto: el círculo crece con
+  // la letra, que es lo que hace que aguante el reflow igual que el ancla.
+  font-size: 0.6em;
+  width: 1.8em;
+  height: 1.8em;
+  border-radius: 50%;
+  line-height: 1;
+  // Por delante del texto. El relleno del subrayado va detrás (z-index -1); el
+  // símbolo tiene que verse.
+  z-index: 2;
+  pointer-events: auto;
+}
