@@ -3,6 +3,7 @@ import MediaPlayer
 import ReadiumNavigator
 import ReadiumShared
 import ReadiumInternal
+import UIKit
 
 private func resolvedTemplateLink(
   _ link: Link,
@@ -474,10 +475,50 @@ extension Decoration {
   }
 }
 
+/// Payload of the `noteMark` decoration style.
+///
+/// A custom style carries its own config, so there is no need to widen
+/// `HighlightConfig` — a type every upstream template reads — just to make room
+/// for a glyph.
+///
+/// **`Hashable` is not decorative.** `Decoration.Style` is `Hashable`, so its
+/// `config` is constrained accordingly: it is not a bare `Any`. Erasing the type
+/// at the call site breaks that constraint, and Swift does not report it — it
+/// fails with "Failed to produce diagnostic for expression" pointing at the
+/// `init` call, saying nothing about which constraint was violated.
+public struct NoteMarkConfig: Hashable {
+  public let tint: UIColor?
+  public let glyph: String
+
+  public init(tint: UIColor?, glyph: String) {
+    self.tint = tint
+    self.glyph = glyph
+  }
+}
+
+/// Drawn when the app asked for a `noteMark` but sent no glyph. A mark that
+/// paints nothing is indistinguishable from a bug, so there is always a shape.
+let defaultNoteMarkGlyph = "\u{2022}"
+
 extension Decoration.Style {
-  init(withStyle style: String, tintColor: Color?, isActive: Bool = false) throws {
+  init(withStyle style: String, tintColor: Color?, isActive: Bool = false, mark: String? = nil) throws {
     let styleId = Decoration.Style.Id(rawValue: style)
-    self.init(id: styleId, config: HighlightConfig(tint: tintColor?.uiColor, isActive: isActive))
+    // Dos llamadas a `self.init`, cada una con su tipo concreto, y NO una
+    // variable `Any` compartida. `config` viaja con restricción de `Hashable`
+    // —`Decoration.Style` lo es—, así que borrar el tipo a `Any` incumple la
+    // restricción y el comprobador se cae sin diagnóstico útil.
+    // Tampoco un ternario: las dos ramas no comparten supertipo.
+    if style == "noteMark" {
+      self.init(
+        id: styleId,
+        config: NoteMarkConfig(tint: tintColor?.uiColor, glyph: mark ?? defaultNoteMarkGlyph)
+      )
+    } else {
+      self.init(
+        id: styleId,
+        config: HighlightConfig(tint: tintColor?.uiColor, isActive: isActive)
+      )
+    }
   }
 
   init(fromJson jsonString: String) throws {
@@ -492,8 +533,9 @@ extension Decoration.Style {
   }
 
   // Accepts the flat style map produced by ReaderDecorationStyle.toJson() on the Dart side:
-  // { "style": "highlight", "tint": "#RRGGBB" (optional), "isActive": true/false }
+  // { "style": "highlight", "tint": "#RRGGBB" (optional), "isActive": true/false, "mark": "\u{1F4DD}" (optional) }
   // `tint` is optional — when absent the decoration has no background colour.
+  // `mark` is only read by the `noteMark` style; every other style ignores it.
   init(fromMap jsonMap: [String: Any]?) throws {
     guard let map = jsonMap,
           let styleStr = map["style"] as? String
@@ -503,7 +545,8 @@ extension Decoration.Style {
     }
     let isActive = map["isActive"] as? Bool ?? false
     let tintColor: Color? = (map["tint"] as? String).flatMap { Color(hex: $0) }
-    try self.init(withStyle: styleStr, tintColor: tintColor, isActive: isActive)
+    let mark = map["mark"] as? String
+    try self.init(withStyle: styleStr, tintColor: tintColor, isActive: isActive, mark: mark)
   }
 }
 

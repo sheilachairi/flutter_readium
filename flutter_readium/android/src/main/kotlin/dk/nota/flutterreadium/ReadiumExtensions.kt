@@ -143,12 +143,15 @@ fun decorationStyleFromMap(decoMap: Map<*, *>?): Decoration.Style? {
         // `tint` is optional — null means no background colour.
         val tintColorStr = decoMap["tint"] as? String
         val isActive = decoMap["isActive"] as? Boolean ?: false
+        // Only `noteMark` reads this; every other style ignores it.
+        val mark = decoMap["mark"] as? String
         // Use TRANSPARENT as the no-tint sentinel; templates check alpha == 0.
         val tint = tintColorStr?.let { readiumColorFromCSS(it).int } ?: Color.TRANSPARENT
         val style =
             when (styleStr) {
                 "underline" -> Decoration.Style.Underline(tint, isActive)
                 "spotlight" -> SpotlightStyle(tint)
+                "noteMark" -> NoteMarkStyle(tint, mark ?: DEFAULT_NOTE_MARK_GLYPH)
                 else -> Decoration.Style.Highlight(tint, isActive) // "highlight" + unknown
             }
         return style
@@ -157,6 +160,12 @@ fun decorationStyleFromMap(decoMap: Map<*, *>?): Decoration.Style? {
         return null
     }
 }
+
+/**
+ * Drawn when the app asked for a `noteMark` but sent no glyph. A mark that
+ * paints nothing is indistinguishable from a bug, so there is always a shape.
+ */
+const val DEFAULT_NOTE_MARK_GLYPH = "\u2022"
 
 private const val READIUM_ASSETS_BASE = "https://readium_assets"
 
