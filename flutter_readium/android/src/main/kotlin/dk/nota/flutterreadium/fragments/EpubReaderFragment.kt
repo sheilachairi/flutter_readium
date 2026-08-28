@@ -7,10 +7,12 @@ import android.view.MenuItem
 import android.view.View
 import androidx.fragment.app.commitNow
 import androidx.lifecycle.lifecycleScope
+import dk.nota.flutterreadium.DEFAULT_NOTE_MARK_GLYPH
 import dk.nota.flutterreadium.EpubImageTapBridge
 import dk.nota.flutterreadium.EpubSameDocumentLinkBridge
 import dk.nota.flutterreadium.FlutterEpubPreferences
 import dk.nota.flutterreadium.NarrationSyncInterface
+import dk.nota.flutterreadium.NoteMarkStyle
 import dk.nota.flutterreadium.PluginLog
 import dk.nota.flutterreadium.R
 import dk.nota.flutterreadium.ReadiumReader
@@ -830,6 +832,7 @@ class EpubReaderFragment :
                                 experimentalPositioning = true,
                             ).also { templates ->
                                 templates[SpotlightStyle::class] = spotlightDecorationTemplate()
+                                templates[NoteMarkStyle::class] = noteMarkDecorationTemplate()
                             },
                     // Only register the callback if custom selectionActions are added.
                     selectionActionModeCallback =
@@ -1046,6 +1049,68 @@ class EpubReaderFragment :
                     val hl = (decoration.locator.text.highlight ?: "").escAttr()
                     val bef = (decoration.locator.text.before ?: "").escAttr()
                     """<div class="flutter-readium-spotlight" data-css-selector="$sel" data-text-highlight="$hl" data-text-before="$bef" data-tint="$bgColor" style="z-index: -1; box-sizing: border-box;"/>"""
+                },
+            )
+
+        /**
+         * Note mark: a small glyph pinned to the **first character** of the range, so a
+         * reader can tell an annotation carries a written note without opening it.
+         *
+         * Draws no box of its own — it is meant to sit on top of a Highlight or Underline
+         * covering the same range.
+         *
+         * `Width.WRAP`, not `BOUNDS`: WRAP makes each box hug the text on its own line, so
+         * the first box's left edge **is** the first character. BOUNDS returns the bounding
+         * rectangle of the whole range, whose left edge is the column margin — a range
+         * starting mid-line would get its mark dragged back to the start of that line.
+         *
+         * `Layout.BOXES` means this element is cloned **once per line**, so the glyph would
+         * repeat down the whole range. `FlutterReadiumTools.scss` hides every box after the
+         * first with a sibling combinator; that works because Readium's decorator puts the
+         * boxes of one decoration inside that decoration's own container `<div>`, so the
+         * combinator cannot reach a different annotation.
+         *
+         * **The mark is tappable.** Readium's decorator resolves a tap by comparing the
+         * point against the bounding rect of each clickable element, so the badge has to sit
+         * *inside* the decoration's own box — which it does, because it is pinned over the
+         * first character rather than beside it. `data-activable="1"` narrows the hit area to
+         * the badge itself; without it Readium falls back to the box and the whole first line
+         * would answer.
+         *
+         * A tap arrives with this decoration's id, which carries a suffix. The Dart side
+         * strips it back to the annotation's own id.
+         */
+        private fun noteMarkDecorationTemplate(): HtmlDecorationTemplate =
+            HtmlDecorationTemplate(
+                layout = HtmlDecorationTemplate.Layout.BOXES,
+                width = HtmlDecorationTemplate.Width.WRAP,
+                element = { decoration ->
+                    val style = decoration.style as? NoteMarkStyle
+                    val tint = style?.tint ?: android.graphics.Color.TRANSPARENT
+                    // Semitransparente a propósito: el círculo se monta sobre la letra y
+                    // tiene que dejarla leer.
+                    val background =
+                        if (android.graphics.Color.alpha(tint) == 0) {
+                            "rgba(0,0,0,0.55)"
+                        } else {
+                            val r = android.graphics.Color.red(tint)
+                            val g = android.graphics.Color.green(tint)
+                            val b = android.graphics.Color.blue(tint)
+                            "rgba($r,$g,$b,0.8)"
+                        }
+
+                    fun String.escAttr() =
+                        replace("&", "&amp;")
+                            .replace("\"", "&quot;")
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+                    val glyph = (style?.glyph ?: DEFAULT_NOTE_MARK_GLYPH).escAttr()
+
+                    // Solo el color va aquí; la forma vive en FlutterReadiumTools.scss para no
+                    // escribir el mismo CSS otra vez en Swift.
+                    // `!important` es obligatorio: ReadiumCSS fuerza a transparente el fondo de
+                    // todo elemento cuando hay un tema activo.
+                    """<div class="flutter-readium-note-mark" style="box-sizing: border-box;"><span class="flutter-readium-note-mark__badge" data-activable="1" style="background-color: $background !important;">$glyph</span></div>"""
                 },
             )
     }
