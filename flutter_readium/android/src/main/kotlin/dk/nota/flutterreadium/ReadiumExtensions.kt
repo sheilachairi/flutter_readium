@@ -106,6 +106,10 @@ fun decorationFromJson(jsonString: String): Decoration? =
                     // `tint` is optional; getString would throw when it is absent.
                     "tint" to if (styleJson.isNull("tint")) null else styleJson.getString("tint"),
                     "isActive" to styleJson.optBoolean("isActive", false),
+                    // Without this the `noteMark` glyph never reached the template:
+                    // `applyDecorations` comes in through here, not through
+                    // `decorationFromMap`, so every mark fell back to the default bullet.
+                    "mark" to if (styleJson.isNull("mark")) null else styleJson.getString("mark"),
                 ),
             ) ?: throw Exception("Failed to deserialize decoration style")
         Decoration(id, locator, style)
