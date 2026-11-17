@@ -8,6 +8,7 @@ import android.view.View
 import androidx.fragment.app.commitNow
 import androidx.lifecycle.lifecycleScope
 import dk.nota.flutterreadium.DEFAULT_NOTE_MARK_GLYPH
+import dk.nota.flutterreadium.DecorationListeners
 import dk.nota.flutterreadium.EpubImageTapBridge
 import dk.nota.flutterreadium.EpubSameDocumentLinkBridge
 import dk.nota.flutterreadium.FlutterEpubPreferences
@@ -24,6 +25,7 @@ import dk.nota.flutterreadium.models.ViewPortSize
 import dk.nota.flutterreadium.progression
 import dk.nota.flutterreadium.requireOrLog
 import dk.nota.flutterreadium.withMainContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -316,10 +318,15 @@ class EpubReaderFragment :
         }
     }
 
+    /** What is painted in each group, to give it to the navigator the next resume creates. */
+    private val appliedDecorations = mutableMapOf<String, List<Decoration>>()
+
     suspend fun applyDecorations(
         decorations: List<Decoration>,
         group: String,
     ) {
+        if (decorations.isEmpty()) appliedDecorations.remove(group) else appliedDecorations[group] = decorations
+
         val navigator =
             requireOrLog(TAG, epubNavigator, "Navigator not ready.") ?: return
 
@@ -328,13 +335,17 @@ class EpubReaderFragment :
         }
     }
 
+    private val decorationListeners = DecorationListeners()
+
+    /**
+     * Registers [listener] for [group] on the current navigator, and on every navigator this
+     * fragment creates later: the navigator is replaced each time the app resumes.
+     */
     fun addDecorationListener(
         group: String,
         listener: org.readium.r2.navigator.DecorableNavigator.Listener,
     ) {
-        val navigator =
-            requireOrLog(TAG, epubNavigator, "Navigator not ready.") ?: return
-        navigator.addDecorationListener(group, listener)
+        decorationListeners.add(group, listener, epubNavigator?.let { it::addDecorationListener })
     }
 
     /**
@@ -905,6 +916,19 @@ class EpubReaderFragment :
         (epubNavigator as OverflowableNavigator).apply {
             // Turns pages when tapping the screen edges or pressing arrow keys.
             addInputListener(createNativeInputListener(this))
+        }
+
+        // A new navigator starts without listeners: hand it the ones already asked for.
+        decorationListeners.attachTo(epubNavigator::addDecorationListener)
+
+        // It starts without decorations too. Give them now, before any resource loads, so each
+        // resource paints its own as it loads. Applying them once a page has loaded races with
+        // the resources still loading: the script for one of those is dropped, the toolkit
+        // records the decorations as applied, and they stay unpainted until the next resume.
+        lifecycleScope.launch(Dispatchers.Main.immediate) {
+            appliedDecorations.forEach { (group, decorations) ->
+                epubNavigator.applyDecorations(decorations, group)
+            }
         }
 
         navigator = epubNavigator
