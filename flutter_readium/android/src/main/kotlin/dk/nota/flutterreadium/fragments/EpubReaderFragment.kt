@@ -7,8 +7,10 @@ import android.view.MenuItem
 import android.view.View
 import androidx.fragment.app.commitNow
 import androidx.lifecycle.lifecycleScope
+import dk.nota.flutterreadium.AppliedDecorations
 import dk.nota.flutterreadium.DEFAULT_NOTE_MARK_GLYPH
 import dk.nota.flutterreadium.DecorationListeners
+import dk.nota.flutterreadium.DecorationTarget
 import dk.nota.flutterreadium.EpubImageTapBridge
 import dk.nota.flutterreadium.EpubSameDocumentLinkBridge
 import dk.nota.flutterreadium.FlutterEpubPreferences
@@ -18,6 +20,7 @@ import dk.nota.flutterreadium.PluginLog
 import dk.nota.flutterreadium.R
 import dk.nota.flutterreadium.ReadiumReader
 import dk.nota.flutterreadium.SpotlightStyle
+import dk.nota.flutterreadium.anyPageLoading
 import dk.nota.flutterreadium.effectiveForLayout
 import dk.nota.flutterreadium.isFixed
 import dk.nota.flutterreadium.models.EpubReaderViewModel
@@ -158,6 +161,8 @@ class EpubReaderFragment :
         )
 
         cacheReflowablePage(pageIndex, totalPages, locator)
+        // The page that held them back may have gone without loading, and so without a page load.
+        sendUnsentDecorations()
         listener?.onPageChanged(pageIndex, totalPages, locator)
     }
 
@@ -224,6 +229,7 @@ class EpubReaderFragment :
             injectImageTapListeners()
             injectSameDocumentLinkListener()
         }
+        sendUnsentDecorations()
         listener?.onPageLoaded()
     }
 
@@ -318,22 +324,37 @@ class EpubReaderFragment :
         }
     }
 
-    /** What is painted in each group, to give it to the navigator the next resume creates. */
-    private val appliedDecorations = mutableMapOf<String, List<Decoration>>()
+    /** What each group should show: given to the navigator the next resume creates, and sent when nothing loads. */
+    private val appliedDecorations = AppliedDecorations()
 
     suspend fun applyDecorations(
         decorations: List<Decoration>,
         group: String,
-    ) {
-        if (decorations.isEmpty()) appliedDecorations.remove(group) else appliedDecorations[group] = decorations
+    ) = withMainContext {
+        val navigator = requireOrLog(TAG, epubNavigator, "Navigator not ready.")
+        appliedDecorations.show(group, decorations, navigator?.asDecorationTarget())
+    }
 
-        val navigator =
-            requireOrLog(TAG, epubNavigator, "Navigator not ready.") ?: return
-
-        return withMainContext {
-            navigator.applyDecorations(decorations, group)
+    /** Sends the decorations that waited for the resources to load. */
+    private fun sendUnsentDecorations() {
+        val navigator = epubNavigator ?: return
+        lifecycleScope.launch(Dispatchers.Main.immediate) {
+            appliedDecorations.sendUnsent(navigator.asDecorationTarget())
         }
     }
+
+    private fun EpubNavigatorFragment.asDecorationTarget() =
+        object : DecorationTarget {
+            override suspend fun applyDecorations(
+                decorations: List<Decoration>,
+                group: String,
+            ) = this@asDecorationTarget.applyDecorations(decorations, group)
+
+            // The navigator's own pages, not this fragment's: both have `childFragmentManager`.
+            override fun isLoadingResources() =
+                this@asDecorationTarget.isAdded &&
+                    anyPageLoading(this@asDecorationTarget.childFragmentManager.fragments.map { it.view })
+        }
 
     private val decorationListeners = DecorationListeners()
 
@@ -923,12 +944,9 @@ class EpubReaderFragment :
 
         // It starts without decorations too. Give them now, before any resource loads, so each
         // resource paints its own as it loads. Applying them once a page has loaded races with
-        // the resources still loading: the script for one of those is dropped, the toolkit
-        // records the decorations as applied, and they stay unpainted until the next resume.
+        // the resources still loading: see AppliedDecorations.
         lifecycleScope.launch(Dispatchers.Main.immediate) {
-            appliedDecorations.forEach { (group, decorations) ->
-                epubNavigator.applyDecorations(decorations, group)
-            }
+            appliedDecorations.attachTo(epubNavigator.asDecorationTarget())
         }
 
         navigator = epubNavigator

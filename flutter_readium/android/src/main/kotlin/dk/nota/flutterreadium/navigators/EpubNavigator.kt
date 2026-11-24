@@ -478,17 +478,20 @@ class EpubNavigator :
             // The toolkit diffs by id and emits an update only for the new href, so a decoration
             // that keeps its id but moves to another resource (e.g. TTS) stays in the old one.
             val previousHrefs = currentDecorations[group].orEmpty().associate { it.id to it.locator.href }
-            if (decorations.any { d -> previousHrefs[d.id]?.let { it != d.locator.href } == true }) {
-                navigator.applyDecorations(emptyList(), group)
-            }
-            navigator.applyDecorations(decorations, group)
 
+            // Before sending, which can wait for resources to load: a page loading meanwhile
+            // re-applies these, and must not send the ones they replace.
             if (decorations.isNotEmpty()) {
                 currentDecorations[group] = decorations
                 ensureDecorationListener(navigator, group)
             } else {
                 currentDecorations.remove(group)
             }
+
+            if (decorations.any { d -> previousHrefs[d.id]?.let { it != d.locator.href } == true }) {
+                navigator.applyDecorations(emptyList(), group)
+            }
+            navigator.applyDecorations(decorations, group)
         }
     }
 
